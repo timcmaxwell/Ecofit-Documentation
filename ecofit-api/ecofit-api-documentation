@@ -1,0 +1,163 @@
+# Overview
+
+The Ecofit API uses the retrofit database and custom logic to deliver a REST API with information on home energy efficiency, grant and funding information, and renewable installation costs. The API is built with best practices using the Python library [FastAPI](https://fastapi.tiangolo.com/) to allow for high performance and fast development. The API has been developed with future iterations in mind, allowing for the easy additions of public or private funding schemes, or additional endpoints with added functionality. The reduction of technical debt has been at the forefront of the development process.
+
+Developer Reference documentation for the API is available at:
+
+<aside>
+💡 https://docs.ecofithomes.com/introduction
+</aside>
+
+This contains more detailed information about making requests, request parameters and bodies, and expected responses.
+
+# **Core Technologies**
+
+1. **FastAPI** - Python library for constructing scalable and comprehensive APIs in Python.
+2. **DocumentDB** - NoSQL database containing Retrofit Data, Renewable Installation Costs.
+3. **AWS**:
+    1. API Gateway for management of dev, test and production environments, API Keys and limits.
+    2. VPCs for development, test and production
+    3. Elastic Beanstalk for secure, reliable and scalable infrastructure for deploying the API publicly.
+    4. Route 53 for domain registration
+    5. S3 for storing static assets.
+4. **GitHub** - Actions used for CI/CD, running tests and deploying to test and production environments.
+5. **Docker** - The application is Dockerized with a Dockerfile used.
+6. **Mintlify** - Creating and hosting API docs
+
+# **Infrastructure**
+
+## GitHub
+
+GitHub actions are used extensively for CI/CD. Environment variables are required to run tests against the test database and are updated regularly. Further information is available in the project documentation on GitHub.
+
+## AWS
+
+There are three VPCs on AWS: ecofit-dev-vpc, ecofit-test-vpc, ecofit-prod-vpc. Each VPC uses separate security groups, and routes, and has a separate connection to the data loading job in the [Ecofit Data Pipeline](https://www.notion.so/Ecofit-Data-Pipeline-8591a8b22a434deca35fbe871628feed?pvs=21). Each VPC is configured in the same way unless otherwise noted below.
+
+### EC2
+
+Each VPC has two EC2 instances within it. The first is called ecofit-{ENV}-db which is used to create an SSH tunnel in the VPC for access to the database. This allows for local developer access and access using MongoDB Compass for easily updating Location Renewable Costs.
+
+The second is ecofit-api-{ENV}, which is the EC2 instance the Elastic Beanstalk is using.
+
+### DocumentDB
+
+Document DB configuration for each environment:
+
+- Instance based cluster
+- Engine Version: 5.0.0
+- 1 Instance per cluster, in eu-west-2
+- Instance size: db.r6g.large
+- Standard Storage Configuration
+- Connected to an ec2 resource for SSH access to the cluster in each VPC.
+
+In Development, TLS encryption is not used for easier developer access.
+
+### Elastic Beanstalk
+
+There are 3 Elastic Beanstalk environments on AWS allowing for scaled compute and cost reduction. Each environment requires the same environment variables to be set as at the local level, changing the URI for database connection, and the logging configuration variables. Each Elastic Beanstalk is a Docker environment and the code is stored in a protected bucket in AWS S3.
+
+### API Gateway
+
+API Gateway is used to manage the three stages: dev, test and prod, and provide internet access to the resources. Currently only API keys are used to authenticate each endpoint. Each stage uses a VPC link with a BACKEND_URL variable for linking to the appropriate Elastic Beanstalk environment.
+
+The overall AWS architecture, excluding API Gateway is shown in the diagram below.
+
+![ecofit-api.png](https://prod-files-secure.s3.us-west-2.amazonaws.com/580ce2f4-89f9-4229-bbec-7f8d6554422b/e1a2de7d-d5a0-4a74-82d6-3ecfb240cb8c/ecofit-api.png)
+
+## Mintlify
+
+Mintlify is used for creating and hosting documentation and API Reference. The code for this is in the ecofit-api-docs repository on GitHub and an integration ensures pushes to this repository update the documentation. There is one documentation used in Production only.
+
+# **Architecture**
+
+Application code is available in the ecofit-api repository on GitHub. The architecture of the application has been developed so that the repository can be cloned and run locally with the correct access to resources and minimal configuration. The application is run in the main file which handles database connection, delivering the customised documentation, organising logging, and running the FastAPI application. The application then contains 7 modules.
+
+### Routers
+
+The Routers module is divided into separate areas of logic for the Ecofit API. GET routers use query parameters to get address/uprn information. The bulk of endpoint functionality occurs in the other 4 routers:
+
+- Property
+    - Retrieve property information by UPRN.
+    - Retrieve property information by first line of address and postcode. A normalised approach allows for special characters, additional whitespace and case insensitivity in address search.
+    - Estimate a property’s attributes based on at least 5 surrounding properties in the same postcode. This endpoint can also be used to assess EPC changes for a given property.
+- Funding
+    - Retrieve information for which funding schemes a property is eligible for by property UPRN. This endpoint also allows for the specification of which funding schemes to look for (eg. GBIS).
+    - Retrieve information for which funding schemes a property is eligible for by property address and postcode. This endpoint also allows for the specification of which funding schemes to look for (eg. GBIS).
+- Renewables
+    - Get information on renewable installation costs for a property given a UPRN.
+    - Get information on renewable installation costs for a property given an address and postcode.
+- Properties
+    - Get a collection of properties that satisfy a filter condition. Attributes that can be filtered on are:
+        - Region
+        - Nation
+        - Local Authority
+        - Energy Rating
+        - Mains Gas
+        - Solar
+        - Solar Thermal
+        - Wind Turbine
+        - Main Heating Type
+        - Hot Water Type
+        - Main Fuel Type
+        - Property Type
+        - Built Form
+        - Tenure
+        - Funding Scheme Eligibility
+
+If a property has had multiple EPCs recorded, all endpoints will return only the latest EPC for each property.
+
+### Models
+
+MongoEngine Document models are used to specify data structure and provide an ORM for data retrieved from the database. These are separated into different files for each collection in the Ecofit Retrofit Database. The user model file also contains functionality for authenticating users, verifying passwords, retrieving a user and creating password hashes with the specified algorithm.
+
+### Schemas
+
+Pydantic Schemas used to validate responses and ensure type safety in the API. There are schemas for users, funding scheme responses, properties and renewable information.
+
+### Services
+
+A services layer is used to abstract logic away from the HTTP endpoints. Here, the properties service is used to filter properties by the criteria specified by the user. Due to the complexity of the Boiler Upgrade Scheme funding eligibility criteria, a separate function is also available and used here for filtering properties by eligibility for this scheme, along with a generic function for filtering properties by standard filters or other funding scheme eligibility.
+
+### Templates
+
+Contains a simple HTML document to load the OpenAPI schema for the documentation and use the Ecofit Homes logo for a favicon. Most of the documentation configuration occurs in the main file.
+
+### Utils
+
+The Utils module is a more general abstraction of the services layer, with useful utility functions used throughout the application. This includes a function for extracting house numbers from addresses, estimating property attributes and assessing an individual property’s eligibility for a given funding scheme. There are also methods for verifying the legitimacy of user request inputs, and a ‘constants’ file.
+
+The ‘constants’ file contains a list of all legitimate values used for the different filter categories used to verify request inputs. This file also contains a dictionary for the funding schemes containing their key and their eligibility criteria. These are formatted ready for querying the database so follow a strict schema (eg. for list searches ‘__in’ is required; this process is extensively documented in GitHub). Adding a new funding scheme is as simple as adding a value to this dictionary following this format. For more complex funding schemes, such as the boiler upgrade scheme, some more complex refactoring may be required.
+
+### Tests
+
+Unit tests are written in the tests folder for the models, routers, utils and services. The schemas are not tested due to the nature of Pydantic. Unit Tests use `mongomock` as a database mocking service. Latency is then tested with integration tests in Postman against the test environment. Testing on the middleware uses `moto` to mock a connection to DynamoDB.
+
+## Configuration
+
+### Environment Configuration
+
+The requirements.txt file contains the project's dependencies. Currently, pip-review is run on the first Tuesday of the month to update installed packages in the test environment. Upon successful testing these are then ported to production. The test and production environment are currently using python 3.9, so it is advised to use the same in development. To run the code locally, the following environment variables are required:
+`DATABASE_URL`= # The ecofit dev db is best for local dev
+`ENV`= # development, test or prod to configure logging. Dev writes to file, test and prod to better stack but require further Authentication.
+`~~LOGS_SOURCE_TOKEN`= # For running the tests~~ ← Deprecated
+
+`AUTH_TABLE_NAME`= # Name of the table used for storing API Keys in DynamoDB
+
+### CI/CD
+
+The project uses GitHub actions for CI/CD.
+
+Feature updates should be written on feature branches before a pull request is made to the test branch. This uses a github workflow file to run an action to perform all the tests against the test database before merging. Once a successful merge is complete, the feature branch can be removed.
+
+Following review an admin can submit a pull request to merge the test and main branches. On acceptance a github workflow is run to deploy the code to the test Elastic Beanstalk environment on AWS. Extensive user testing should also be performed at this point.
+
+When ready, a pull request can be used to merge main and prod branches. The prod branch is significantly protected and only certain users are authorised to approve requests. This will deploy the prod branch code to the production Elastic Beanstalk environment.
+
+# **Authentication**
+
+## Authenticating requests
+
+Authentication is now performed using API Keys configured in AWS API Gateway. Usage plans, limits and user keys can be created and revoked in the AWS Management Console.
+
+API Keys are created in API Gateway with a corresponding usage plan. These need to then be recorded in the DynamoDB `ecofit-api-keys` table in order for authentication to be monitored. On the Procode estate, all API Keys are generated and stored in the DynamoDB table.
