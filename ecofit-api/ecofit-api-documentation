@@ -14,12 +14,7 @@ This contains more detailed information about making requests, request parameter
 
 1. **FastAPI** - Python library for constructing scalable and comprehensive APIs in Python.
 2. **DocumentDB** - NoSQL database containing Retrofit Data, Renewable Installation Costs.
-3. **AWS**:
-    1. API Gateway for management of dev, test and production environments, API Keys and limits.
-    2. VPCs for development, test and production
-    3. Elastic Beanstalk for secure, reliable and scalable infrastructure for deploying the API publicly.
-    4. Route 53 for domain registration
-    5. S3 for storing static assets.
+3. **AWS** - Procode infrastructure
 4. **GitHub** - Actions used for CI/CD, running tests and deploying to test and production environments.
 5. **Docker** - The application is Dockerized with a Dockerfile used.
 6. **Mintlify** - Creating and hosting API docs
@@ -29,41 +24,6 @@ This contains more detailed information about making requests, request parameter
 ## GitHub
 
 GitHub actions are used extensively for CI/CD. Environment variables are required to run tests against the test database and are updated regularly. Further information is available in the project documentation on GitHub.
-
-## AWS
-
-There are three VPCs on AWS: ecofit-dev-vpc, ecofit-test-vpc, ecofit-prod-vpc. Each VPC uses separate security groups, and routes, and has a separate connection to the data loading job in the [Ecofit Data Pipeline](https://www.notion.so/Ecofit-Data-Pipeline-8591a8b22a434deca35fbe871628feed?pvs=21). Each VPC is configured in the same way unless otherwise noted below.
-
-### EC2
-
-Each VPC has two EC2 instances within it. The first is called ecofit-{ENV}-db which is used to create an SSH tunnel in the VPC for access to the database. This allows for local developer access and access using MongoDB Compass for easily updating Location Renewable Costs.
-
-The second is ecofit-api-{ENV}, which is the EC2 instance the Elastic Beanstalk is using.
-
-### DocumentDB
-
-Document DB configuration for each environment:
-
-- Instance based cluster
-- Engine Version: 5.0.0
-- 1 Instance per cluster, in eu-west-2
-- Instance size: db.r6g.large
-- Standard Storage Configuration
-- Connected to an ec2 resource for SSH access to the cluster in each VPC.
-
-In Development, TLS encryption is not used for easier developer access.
-
-### Elastic Beanstalk
-
-There are 3 Elastic Beanstalk environments on AWS allowing for scaled compute and cost reduction. Each environment requires the same environment variables to be set as at the local level, changing the URI for database connection, and the logging configuration variables. Each Elastic Beanstalk is a Docker environment and the code is stored in a protected bucket in AWS S3.
-
-### API Gateway
-
-API Gateway is used to manage the three stages: dev, test and prod, and provide internet access to the resources. Currently only API keys are used to authenticate each endpoint. Each stage uses a VPC link with a BACKEND_URL variable for linking to the appropriate Elastic Beanstalk environment.
-
-The overall AWS architecture, excluding API Gateway is shown in the diagram below.
-
-![ecofit-api.png](https://prod-files-secure.s3.us-west-2.amazonaws.com/580ce2f4-89f9-4229-bbec-7f8d6554422b/e1a2de7d-d5a0-4a74-82d6-3ecfb240cb8c/ecofit-api.png)
 
 ## Mintlify
 
